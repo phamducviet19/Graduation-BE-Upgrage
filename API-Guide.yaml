@@ -1,0 +1,596 @@
+openapi: 3.0.4
+info:
+  title: API GUIDE
+  description: Support test API.
+  version: 0.1.9
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+servers:
+  - url: http://localhost:5000/api
+
+paths:
+  /auth/register:
+    post:
+      summary: Returns info user.
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                  example: "Nguyen Van A"
+                email:
+                  type: string
+                  format: email
+                  maxLength: 100
+                  example: "nva@example.com"
+                password:
+                  type: string
+                  format: password
+                  example: "123456"
+                role:
+                  type: string
+                  enum: [admin, client]
+                  default: client
+                  example: "admin"
+                phone:
+                  type: string
+                  maxLength: 20
+                  example: "0123456789"
+                address:
+                  type: string
+                  example: "123 Đường ABC, Quận 1, Hà Nội"
+      responses:
+        "201":
+          description: Register success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Register success"
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                        example: 1
+                      name:
+                        type: string
+                        example: "Nguyen Van A"
+                      email:
+                        type: string
+                        example: "nva@example.com"
+                      role:
+                        type: string
+                        enum: [admin, client]
+                        example: "client"
+                      phone:
+                        type: string
+                        example: "0123456789"
+                      address:
+                        type: string
+                        example: "123 Đường ABC, Quận 1, Hà Nội"
+                      created_at:
+                        type: string
+                        format: date-time
+                        example: "2025-09-11T09:00:00Z"
+        "400":
+          description: Invalid input
+        "500":
+          description: Error server
+  /auth/login:
+    post:
+      summary: User login
+      description: Authenticate user with email and password
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: "nva@example.com"
+                password:
+                  type: string
+                  format: password
+                  example: "123456"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Login successful"
+                  token:
+                    type: string
+                    example: "eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+                  expiresIn:
+                    type: integer
+                    example: 3600
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                        example: 1
+                      name:
+                        type: string
+                        example: "Nguyen Van A"
+                      email:
+                        type: string
+                        example: "nva@example.com"
+                      role:
+                        type: string
+                        enum: [admin, client]
+                        example: "client"
+                      phone:
+                        type: string
+                        example: "012345678910"
+                      address:
+                        type: string
+                        example: "123 Đường ABC, Quận 2, Hà Nội"
+
+        "400":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Email or password is incorrect"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Internal server error"
+  /brands:
+    post:
+      summary: Tạo mới một hoặc nhiều brand
+      tags: [Brands]
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  properties:
+                    name:
+                      type: string
+                      example: "Asus"
+                - type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        example: "MSI"
+      responses:
+        201:
+          description: Brand đã được tạo hoặc tìm thấy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Brands processed"
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        brand:
+                          type: object
+                          example:
+                            id: 1
+                            name: "Asus"
+                        created:
+                          type: boolean
+                          example: true
+        400:
+          description: Không có brand hợp lệ
+        500:
+          description: Lỗi server
+
+    get:
+      summary: Lấy danh sách tất cả brand
+      tags: [Brands]
+      responses:
+        200:
+          description: Danh sách brands
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      example: 1
+                    name:
+                      type: string
+                      example: "Asus"
+        500:
+          description: Lỗi server
+  /brands/{id}:
+    get:
+      summary: Lấy brand theo ID
+      tags:
+        - Brands
+      parameters:
+        - name: id
+          in: path
+          description: ID của brand
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Thông tin brand
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  name:
+                    type: string
+                    example: "Asus"
+        '404':
+          description: Không tìm thấy brand
+        '500':
+          description: Lỗi server
+    put:
+      summary: Cập nhật brand theo ID
+      tags:
+        - Brands 
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: ID của brand cần cập nhật
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: "Dell"
+      responses:
+        '200':
+          description: Cập nhật thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Brand updated"
+                  brand:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                        example: 1
+                      name:
+                        type: string
+                        example: "Dell"
+        '404':
+          description: Brand not found
+        '500':
+          description: Server error
+  /categories:
+    post:
+      summary: Tạo mới category (có thể tạo nhiều)
+      tags: [Categories]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  properties:
+                    name:
+                      type: string
+                      example: "CPU"
+                - type: object
+                  properties:
+                    categories:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                            example: "Monitor"
+      responses:
+        201:
+          description: Danh sách category đã xử lý
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Categories processed"
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        category:
+                          type: object
+                          properties:
+                            id:
+                              type: integer
+                              example: 1
+                            name:
+                              type: string
+                              example: "CPU"
+                        created:
+                          type: boolean
+                          example: true
+        400:
+          description: Không có categories gửi lên
+        500:
+          description: Lỗi server
+    get:
+      summary: Lấy tất cả categories
+      tags: [Categories]
+      responses:
+        200:
+          description: Danh sách categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      example: 1
+                    name:
+                      type: string
+                      example: "CPU"
+        500:
+          description: Lỗi server
+  /categories/{id}:
+    get:
+      summary: Lấy category theo ID
+      tags: [Categories]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: ID của category
+      responses:
+        200:
+          description: Thông tin category
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  name:
+                    type: string
+                    example: "Laptop"
+        404:
+          description: Không tìm thấy category
+        500:
+          description: Lỗi server
+    put:
+      summary: Cập nhật category theo ID
+      tags:
+        - Categories
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: ID của category cần cập nhật
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: "CPU"
+      responses:
+        '200':
+          description: Cập nhật thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Category updated"
+                  category:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                        example: 1
+                      name:
+                        type: string
+                        example: "VGA"
+        '404':
+          description: Category not found
+        '500':
+          description: Server error
+  /profile:
+    get:
+      summary: Lấy thông tin cá nhân
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Thông tin user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  name:
+                    type: string
+                    example: "John Doe"
+                  email:
+                    type: string
+                    example: "john@example.com"
+                  role:
+                    type: string
+                    example: "client"
+                  phone:
+                    type: string
+                    example: "0901234567"
+                  address:
+                    type: string
+                    example: "123 Main St"
+                  created_at:
+                    type: string
+                    format: date-time
+                    example: 2025-09-12T10:00:00Z
+        401:
+          description: Chưa được xác thực
+        404:
+          description: Không tìm thấy user
+        500:
+          description: Lỗi server
+
+    put:
+      summary: Cập nhật thông tin cá nhân
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: "New Name"
+                password:
+                  type: string
+                  example: "newpassword123"
+                phone:
+                  type: string
+                  example: "0987654321"
+                address:
+                  type: string
+                  example: "456 Another St"
+      responses:
+        200:
+          description: Cập nhật thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  name:
+                    type: string
+                    example: "New Name"
+                  email:
+                    type: string
+                    example: "john@example.com"
+                  phone:
+                    type: string
+                    example: "0987654321"
+                  address:
+                    type: string
+                    example: "456 Another St"
+                  createdAt:
+                    type: string
+                    format: date-time
+                    example: 2025-09-12T10:00:00Z
+        401:
+          description: Chưa được xác thực
+        404:
+          description: Không tìm thấy user
+        500:
+          description: Lỗi server
+
