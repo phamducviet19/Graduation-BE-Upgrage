@@ -4,34 +4,44 @@ const { Op } = require("sequelize");
 const dotenv = require("dotenv");
 dotenv.config();
 
-const { GoogleGenAI } = require("@google/genai");
+const Groq = require("groq-sdk");
 
-// Khởi tạo Gemini AI từ env
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
+// Khởi tạo Groq AI từ env
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY || "",
 });
 
-const CANDIDATE_MODELS = ["gemini-flash-lite-latest", "gemini-3.8-flash", "gemini-flash-latest"];
+const CANDIDATE_MODELS = [
+  "openai/gpt-oss-120b",
+  "openai/gpt-oss-20b",
+  "allam-2-7b"
+];
 
-const generateContentWithFallback = async (requestConfig) => {
+const generateContentWithFallback = async ({ messages, temperature = 0.5, max_tokens = 3500 }) => {
   let lastError = null;
   for (const model of CANDIDATE_MODELS) {
     try {
-      console.log(`🤖 Đang gọi Gemini API với model: ${model}...`);
-      const resp = await ai.models.generateContent({
-        ...requestConfig,
+      console.log(`🤖 Đang gọi Groq API với model: ${model}...`);
+      const resp = await groq.chat.completions.create({
+        messages,
         model,
+        temperature,
+        max_tokens,
       });
-      return { resp, modelUsed: model };
+      const text = resp.choices?.[0]?.message?.content || "";
+      if (text) {
+        return { text, modelUsed: model };
+      }
+      console.warn(`⚠️ Model ${model} trả về content rỗng, thử model tiếp theo...`);
     } catch (err) {
       console.warn(`⚠️ Model ${model} gặp lỗi (${err.status || err.message}), thử model tiếp theo...`);
       lastError = err;
-      if (err.status === 400 && err.message?.includes("API key not valid")) {
+      if (err.status === 401 || (err.status === 400 && err.message?.includes("API key"))) {
         throw err;
       }
     }
   }
-  throw lastError;
+  throw lastError || new Error("Không nhận được phản hồi từ AI");
 };
 
 // Thêm sản phẩm vào danh sách so sánh
@@ -163,9 +173,9 @@ exports.removeFromCompare = async (req, res) => {
 exports.compareWithAI = async (req, res) => {
   try {
     // Kiểm tra API key
-    if (!process.env.GEMINI_API_KEY) {
+    if (!process.env.GROQ_API_KEY) {
       return res.status(500).json({ 
-        error: "GEMINI_API_KEY chưa được cấu hình trong .env" 
+        error: "GROQ_API_KEY chưa được cấu hình trong .env. Vui lòng lấy key miễn phí tại https://console.groq.com/keys" 
       });
     }
 
@@ -375,39 +385,24 @@ YÊU CẦU BÀI PHÂN TÍCH SO SÁNH (Markdown chuyên nghiệp, số liệu rõ
 Trình bày bằng tiếng Việt chuyên nghiệp, ngôn từ sắc sảo, khách quan và giàu giá trị thông tin!`;
 
     // ======================
-    // GỌI GEMINI API
+    // GỌI GROQ API
     // ======================
     const messages = [
       {
+        role: "system",
+        content: "Bạn là Chuyên gia Đánh giá Phần cứng và So sánh Linh kiện PC hàng đầu tại Sale PC."
+      },
+      {
         role: "user",
-        parts: [{ text: prompt }]
+        content: prompt
       }
     ];
 
-    const { resp } = await generateContentWithFallback({
-      contents: messages,
-      generationConfig: {
-        temperature: 0.5,
-        topP: 0.9,
-        maxOutputTokens: 3500,
-      },
-      safetySettings: [
-        {
-          category: "HARM_CATEGORY_HARASSMENT",
-          threshold: "BLOCK_NONE"
-        }
-      ]
+    const { text: comparisonText } = await generateContentWithFallback({
+      messages,
+      temperature: 0.5,
+      max_tokens: 3500,
     });
-
-    // Lấy kết quả
-    let comparisonText = "Không thể tạo so sánh.";
-    if (resp?.candidates?.[0]?.content?.parts?.[0]?.text) {
-      comparisonText = resp.candidates[0].content.parts[0].text;
-    } else if (typeof resp?.response?.text === 'function') {
-      comparisonText = resp.response.text();
-    } else if (resp?.response?.text) {
-      comparisonText = resp.response.text;
-    }
 
     // ======================
     // TRẢ VỀ KẾT QUẢ

@@ -3,34 +3,44 @@ const { Op } = require("sequelize");
 const dotenv = require("dotenv");
 dotenv.config();
 
-const { GoogleGenAI } = require("@google/genai");
+const Groq = require("groq-sdk");
 
-// Khởi tạo Gemini AI
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
+// Khởi tạo Groq AI
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY || "",
 });
 
-const CANDIDATE_MODELS = ["gemini-flash-lite-latest", "gemini-3.8-flash", "gemini-flash-latest"];
+const CANDIDATE_MODELS = [
+  "openai/gpt-oss-120b",
+  "openai/gpt-oss-20b",
+  "allam-2-7b"
+];
 
-const generateContentWithFallback = async (requestConfig) => {
+const generateContentWithFallback = async ({ messages, temperature = 0.4, max_tokens = 4000 }) => {
   let lastError = null;
   for (const model of CANDIDATE_MODELS) {
     try {
-      console.log(`🤖 Đang gọi Gemini API với model: ${model}...`);
-      const resp = await ai.models.generateContent({
-        ...requestConfig,
+      console.log(`🤖 Đang gọi Groq API với model: ${model}...`);
+      const resp = await groq.chat.completions.create({
+        messages,
         model,
+        temperature,
+        max_tokens,
       });
-      return { resp, modelUsed: model };
+      const text = resp.choices?.[0]?.message?.content || "";
+      if (text) {
+        return { text, modelUsed: model };
+      }
+      console.warn(`⚠️ Model ${model} trả về content rỗng, thử model tiếp theo...`);
     } catch (err) {
       console.warn(`⚠️ Model ${model} gặp lỗi (${err.status || err.message}), thử model tiếp theo...`);
       lastError = err;
-      if (err.status === 400 && err.message?.includes("API key not valid")) {
+      if (err.status === 401 || (err.status === 400 && err.message?.includes("API key"))) {
         throw err;
       }
     }
   }
-  throw lastError;
+  throw lastError || new Error("Không nhận được phản hồi từ AI");
 };
 
 // Helper chuẩn hóa danh sách ID sản phẩm (hỗ trợ mảng số, mảng chuỗi số, hoặc mảng object { product_id, ... } / { id, ... })
@@ -289,9 +299,9 @@ exports.deletePcBuild = async (req, res) => {
 exports.buildPCWithAI = async (req, res) => {
   try {
     // Kiểm tra API key
-    if (!process.env.GEMINI_API_KEY) {
+    if (!process.env.GROQ_API_KEY) {
       return res.status(500).json({ 
-        error: "GEMINI_API_KEY chưa được cấu hình trong .env" 
+        error: "GROQ_API_KEY chưa được cấu hình trong .env. Vui lòng lấy key miễn phí tại https://console.groq.com/keys" 
       });
     }
 
@@ -525,33 +535,26 @@ PHẦN 2: BÀI TƯ VẤN & GIẢI THÍCH CHUYÊN SÂU (Bằng Markdown đẹp m�
 Trả lời bằng tiếng Việt, chuyên nghiệp, nhiệt tình và rõ ràng!`;
 
     // ==========================================
-    // BƯỚC 3: GỌI GEMINI API VỚI RETRY/FALLBACK
+    // BƯỚC 3: GỌI GROQ API VỚI RETRY/FALLBACK
     // ==========================================
-    console.log('🤖 Đang gọi Gemini API tạo PC Build...');
+    console.log('🤖 Đang gọi Groq API tạo PC Build...');
 
-    const { resp, modelUsed } = await generateContentWithFallback({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.4,
-        topP: 0.9,
-        maxOutputTokens: 4000,
+    const messages = [
+      {
+        role: "system",
+        content: "Bạn là Chuyên gia Tư vấn và Tối ưu Cấu hình PC hàng đầu tại Sale PC. Nhiệm vụ của bạn là nhận danh sách linh kiện trong kho và yêu cầu của khách hàng, sau đó chọn ra một cấu hình PC hoàn chỉnh, tối ưu nhất."
       },
-      safetySettings: [
-        {
-          category: "HARM_CATEGORY_HARASSMENT",
-          threshold: "BLOCK_NONE"
-        }
-      ]
-    });
+      {
+        role: "user",
+        content: prompt
+      }
+    ];
 
-    let responseText = "";
-    if (resp?.candidates?.[0]?.content?.parts?.[0]?.text) {
-      responseText = resp.candidates[0].content.parts[0].text;
-    } else if (typeof resp?.response?.text === 'function') {
-      responseText = resp.response.text();
-    } else if (resp?.response?.text) {
-      responseText = resp.response.text;
-    }
+    const { text: responseText, modelUsed } = await generateContentWithFallback({
+      messages,
+      temperature: 0.4,
+      max_tokens: 4000,
+    });
 
     if (!responseText) {
       throw new Error("Không nhận được phản hồi từ AI");
@@ -733,7 +736,7 @@ Trả lời bằng tiếng Việt, chuyên nghiệp, nhiệt tình và rõ ràng
       ],
       metadata: {
         timestamp: new Date().toISOString(),
-        aiModel: modelUsed || "gemini-flash-lite-latest",
+        aiModel: modelUsed || "openai/gpt-oss-120b",
         autoSaved: !!savedBuildId,
         categoriesScanned: availableCategories,
         productsScanned: totalProductsCount

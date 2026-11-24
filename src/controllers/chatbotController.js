@@ -4,33 +4,43 @@ dotenv.config();
 
 const { Op, Sequelize } = require("sequelize");
 const { Product, ProductAttribute, ProductAttributeValue, Category, ProductImage } = require("../models");
-const { GoogleGenAI } = require("@google/genai");
+const Groq = require("groq-sdk");
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY || "",
 });
 
-const CANDIDATE_MODELS = ["gemini-flash-lite-latest", "gemini-3.8-flash", "gemini-flash-latest"];
+const CANDIDATE_MODELS = [
+  "openai/gpt-oss-120b",
+  "openai/gpt-oss-20b",
+  "allam-2-7b"
+];
 
-const generateContentWithFallback = async (requestConfig) => {
+const generateContentWithFallback = async ({ messages, temperature = 0.6, max_tokens = 2500 }) => {
   let lastError = null;
   for (const model of CANDIDATE_MODELS) {
     try {
-      console.log(`🤖 Đang gọi Gemini API với model: ${model}...`);
-      const resp = await ai.models.generateContent({
-        ...requestConfig,
+      console.log(`🤖 Đang gọi Groq API với model: ${model}...`);
+      const resp = await groq.chat.completions.create({
+        messages,
         model,
+        temperature,
+        max_tokens,
       });
-      return { resp, modelUsed: model };
+      const text = resp.choices?.[0]?.message?.content || "";
+      if (text) {
+        return { text, modelUsed: model };
+      }
+      console.warn(`⚠️ Model ${model} trả về content rỗng, thử model tiếp theo...`);
     } catch (err) {
       console.warn(`⚠️ Model ${model} gặp lỗi (${err.status || err.message}), thử model tiếp theo...`);
       lastError = err;
-      if (err.status === 400 && err.message?.includes("API key not valid")) {
+      if (err.status === 401 || (err.status === 400 && err.message?.includes("API key"))) {
         throw err;
       }
     }
   }
-  throw lastError;
+  throw lastError || new Error("Không nhận được phản hồi từ AI");
 };
 
 // ==========================================
@@ -232,47 +242,33 @@ YÊU CẦU CỦA KHÁCH HÀNG:
 
 Hãy đóng vai chuyên viên Sale PC và trả lời khách hàng một cách xuất sắc nhất!`;
 
-    // 3. Chuẩn bị lịch sử hội thoại cho Gemini
+    // 3. Chuẩn bị lịch sử hội thoại cho Groq
     const formattedHistory = (Array.isArray(chatHistory) ? chatHistory.slice(-6) : [])
       .filter(msg => msg && msg.content && (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'model'))
       .map(msg => ({
-        role: msg.role === 'user' ? 'user' : 'model',
-        parts: [{ text: msg.content }]
+        role: (msg.role === 'assistant' || msg.role === 'model') ? 'assistant' : 'user',
+        content: msg.content
       }));
 
     const messages = [
+      {
+        role: "system",
+        content: systemInstruction
+      },
       ...formattedHistory,
       {
         role: "user",
-        parts: [{ text: `${systemInstruction}\n\n${prompt}` }]
+        content: prompt
       }
     ];
 
-    // 4. Gọi Gemini API với cơ chế dự phòng
-    console.log('🤖 Đang gọi Gemini Chatbot API...');
-    const { resp } = await generateContentWithFallback({
-      contents: messages,
-      generationConfig: {
-        temperature: 0.6,
-        topP: 0.9,
-        maxOutputTokens: 2500,
-      },
-      safetySettings: [
-        {
-          category: "HARM_CATEGORY_HARASSMENT",
-          threshold: "BLOCK_NONE"
-        }
-      ]
+    // 4. Gọi Groq API với cơ chế dự phòng
+    console.log('🤖 Đang gọi Groq Chatbot API...');
+    const { text: replyText } = await generateContentWithFallback({
+      messages,
+      temperature: 0.6,
+      max_tokens: 2500,
     });
-
-    let replyText = "Xin lỗi bạn, mình chưa xử lý được câu hỏi này. Bạn có thể mô tả chi tiết hơn nhu cầu không ạ?";
-    if (resp?.candidates?.[0]?.content?.parts?.[0]?.text) {
-      replyText = resp.candidates[0].content.parts[0].text;
-    } else if (typeof resp?.response?.text === 'function') {
-      replyText = resp.response.text();
-    } else if (resp?.response?.text) {
-      replyText = resp.response.text;
-    }
 
     // 5. Chuẩn bị thẻ sản phẩm gợi ý kèm hình ảnh cho giao diện
     const suggestedProducts = relevantProducts.slice(0, 4).map(p => {
