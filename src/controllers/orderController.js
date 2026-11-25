@@ -110,6 +110,44 @@ exports.getAllOrders = async (req, res) => {
 
     const whereCondition = userRole === "admin" ? {} : { user_id: userId };
 
+    const page = req.query.page ? parseInt(req.query.page) : null;
+    const limit = req.query.limit ? parseInt(req.query.limit) : null;
+
+    if (page || limit) {
+      const currentPage = Math.max(1, page || 1);
+      const currentLimit = Math.max(1, limit || 10);
+      const offset = (currentPage - 1) * currentLimit;
+
+      const { count, rows: orders } = await Order.findAndCountAll({
+        where: whereCondition,
+        include: [
+          {
+            model: OrderDetail,
+            include: [{ model: Product, attributes: ["id", "name", "price"] }]
+          },
+          {
+            model: User,
+            attributes: ["id", "name", "email", "phone", "address"]
+          }
+        ],
+        order: [["order_date", "DESC"]],
+        limit: currentLimit,
+        offset,
+        distinct: true,
+      });
+
+      return res.json({
+        success: true,
+        data: orders,
+        pagination: {
+          totalItems: count,
+          totalPages: Math.ceil(count / currentLimit),
+          currentPage: currentPage,
+          pageSize: currentLimit
+        }
+      });
+    }
+
     const orders = await Order.findAll({
       where: whereCondition,
       include: [

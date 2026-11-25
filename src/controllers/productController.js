@@ -59,6 +59,50 @@ if (typeof attributes === "string") {
 // ================== GET ALL PRODUCTS ==================
 exports.getProducts = async (req, res) => {
   try {
+    const page = req.query.page ? parseInt(req.query.page) : null;
+    const limit = req.query.limit ? parseInt(req.query.limit) : null;
+
+    if (page || limit) {
+      const currentPage = Math.max(1, page || 1);
+      const currentLimit = Math.max(1, limit || 10);
+      const offset = (currentPage - 1) * currentLimit;
+
+      const { count, rows: products } = await Product.findAndCountAll({
+        include: [
+          {
+            model: ProductAttributeValue,
+            include: [ProductAttribute],
+          },
+          {
+            model: ProductImage,
+            as: "images",
+            attributes: ["id", "image_url", "is_main", "created_at"],
+            required: false,
+          },
+        ],
+        order: [["created_at", "DESC"]],
+        limit: currentLimit,
+        offset,
+        distinct: true,
+      });
+
+      const formatted = products.map(p => ({
+        ...p.toJSON(),
+        mainImage: p.images?.find(img => img.is_main)?.image_url || null,
+      }));
+
+      return res.json({
+        success: true,
+        data: formatted,
+        pagination: {
+          totalItems: count,
+          totalPages: Math.ceil(count / currentLimit),
+          currentPage: currentPage,
+          pageSize: currentLimit,
+        },
+      });
+    }
+
     const products = await Product.findAll({
       include: [
         {

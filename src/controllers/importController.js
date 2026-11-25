@@ -59,6 +59,40 @@ exports.createImport = async (req, res) => {
 // Lấy danh sách phiếu nhập
 exports.getAllImports = async (req, res) => {
   try {
+    const page = req.query.page ? parseInt(req.query.page) : null;
+    const limit = req.query.limit ? parseInt(req.query.limit) : null;
+
+    if (page || limit) {
+      const currentPage = Math.max(1, page || 1);
+      const currentLimit = Math.max(1, limit || 10);
+      const offset = (currentPage - 1) * currentLimit;
+
+      const { count, rows: receipts } = await ImportReceipt.findAndCountAll({
+        include: [
+          { model: Supplier, attributes: ["id", "name"] },
+          {
+            model: ImportDetail,
+            include: [{ model: Product, attributes: ["id", "name"] }],
+          },
+        ],
+        order: [["import_date", "DESC"]],
+        limit: currentLimit,
+        offset,
+        distinct: true,
+      });
+
+      return res.json({
+        success: true,
+        data: receipts,
+        pagination: {
+          totalItems: count,
+          totalPages: Math.ceil(count / currentLimit),
+          currentPage: currentPage,
+          pageSize: currentLimit
+        }
+      });
+    }
+
     const receipts = await ImportReceipt.findAll({
       include: [
         { model: Supplier, attributes: ["id", "name"] },
