@@ -227,43 +227,61 @@ exports.cancelOrder = async (req, res) => {
     const userRole = req.user.role;
     const userId = req.user.id;
 
-    // Tìm order
-    const order = await Order.findByPk(id, {
-      include: [{ model: OrderDetail }]
-    });
+    const result = await sequelize.transaction(async (t) => {
+      // Lock riêng bảng orders (PostgreSQL không cho phép FOR UPDATE đi kèm LEFT OUTER JOIN)
+      const order = await Order.findByPk(id, {
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
 
-    if (!order) {
-      return res.status(404).json({ message: "Order not found" });
-    }
-
-    // Nếu user thường thì chỉ được hủy đơn của chính mình
-    if (userRole !== "admin" && order.user_id !== userId) {
-      return res.status(403).json({ message: "Not allowed to cancel this order" });
-    }
-
-    // Chỉ cho phép hủy khi chưa ship
-    if (order.status === "shipped") {
-      return res.status(400).json({ message: "Cannot cancel shipped order" });
-    }
-
-    // Hoàn lại stock sản phẩm
-    for (const item of order.OrderDetails) {
-      const product = await Product.findByPk(item.product_id);
-      if (product) {
-        product.stock += item.quantity;
-        await product.save();
+      if (!order) {
+        return { status: 404, body: { message: "Không tìm thấy đơn hàng" } };
       }
-    }
 
-    // Cập nhật trạng thái
-    order.status = "Cancelled";
-    await order.save();
+      // Nếu user thường thì chỉ được hủy đơn của chính mình
+      if (userRole !== "admin" && order.user_id !== userId) {
+        return { status: 403, body: { message: "Bạn không có quyền hủy đơn hàng này" } };
+      }
 
-    res.json({
-      success: true,
-      message: "Order cancelled successfully",
-      data: order,
+      // Chỉ cho phép hủy khi đơn hàng đang ở trạng thái Pending hoặc Confirmed
+      if (order.status === "Shipped") {
+        return { status: 400, body: { message: "Đơn hàng đã được giao, không thể hủy" } };
+      }
+      if (order.status === "Cancelled") {
+        return { status: 400, body: { message: "Đơn hàng đã bị hủy trước đó" } };
+      }
+      if (!["Pending", "Confirmed"].includes(order.status)) {
+        return { status: 400, body: { message: "Không thể hủy đơn hàng ở trạng thái hiện tại" } };
+      }
+
+      // Lấy chi tiết đơn hàng để hoàn lại tồn kho
+      const orderDetails = await OrderDetail.findAll({
+        where: { order_id: order.id },
+        transaction: t,
+      });
+
+      // Hoàn lại stock sản phẩm
+      for (const item of orderDetails) {
+        await Product.update(
+          { stock: sequelize.literal(`stock + ${Number(item.quantity)}`) },
+          { where: { id: item.product_id }, transaction: t }
+        );
+      }
+
+      // Cập nhật trạng thái
+      await order.update({ status: "Cancelled" }, { transaction: t });
+
+      return {
+        status: 200,
+        body: {
+          success: true,
+          message: "Hủy đơn hàng thành công",
+          data: order,
+        },
+      };
     });
+
+    return res.status(result.status).json(result.body);
   } catch (err) {
     console.error("Error cancelling order:", err);
     res.status(500).json({ message: "Server error while cancelling order" });
