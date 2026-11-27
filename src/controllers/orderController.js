@@ -194,6 +194,12 @@ exports.updateOrderStatus = async (req, res) => {
     if (order.status === "Cancelled") {
       return res.status(400).json({ message: "Đơn hàng đã bị huỷ, không thể thay đổi trạng thái" });
     }
+    if (order.status === "Pending" && status === "Shipped") {
+      return res.status(400).json({ message: "Đơn hàng ở trạng thái Pending phải chuyển sang Confirmed trước khi chuyển sang Shipped" });
+    }
+    if (order.status === "Confirmed" && status === "Pending") {
+      return res.status(400).json({ message: "Đơn hàng đã xác nhận không thể chuyển ngược về Pending" });
+    }
 
     // Nếu chuyển sang Cancelled thì hoàn lại tồn kho cho sản phẩm
     if (status === "Cancelled" && order.status !== "Cancelled") {
