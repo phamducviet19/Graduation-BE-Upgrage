@@ -165,7 +165,7 @@ exports.vnpayReturn = async (req, res) => {
                  status: "Success",
              });
              await Order.update(
-                 { status: "Confirmed" },
+                 { status: "Pending" },
                  { where: { id: orderId } }
              );
 
